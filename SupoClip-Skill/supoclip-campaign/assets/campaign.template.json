@@ -52,7 +52,11 @@
     "cta": "",
     "font": "Noto Sans",
     "encoder": "auto",
-    "cpu_threads": 4,
+    "cpu_threads": "auto",
+    "filter_threads": "auto",
+    "decode_threads": "auto",
+    "cpu_reserve": 1,
+    "concurrent_renders": 1,
     "preset": "veryfast",
     "crf": 18
   }

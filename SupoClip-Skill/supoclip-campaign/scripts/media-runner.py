@@ -15,8 +15,8 @@ def main():
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
-    if not command or command[0] not in {'render.py'}:
-        parser.error('Choose the packaged render.py helper after --')
+    if not command or command[0] not in {'render.py', 'benchmark-threads.py'}:
+        parser.error('Choose render.py or benchmark-threads.py after --')
     root = Path(args.root).resolve(strict=True)
     if not root.is_dir() or ',' in str(root):
         parser.error('Working root must be a directory without commas')

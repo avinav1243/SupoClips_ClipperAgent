@@ -5,7 +5,9 @@ description: Create original campaign clip drafts with an existing SupoClip inst
 
 # SupoClip campaign clips
 
-Use the user's existing SupoClip installation. This skill works with Codex and Claude on Windows or Linux. Helper scripts need Node.js 20+ and Python 3.10+; media work also needs FFmpeg/FFprobe, natively or in the installed SupoClip backend image. Discover actual URLs, paths, container images, authentication, and encoder access on the current PC. Never carry credentials, account IDs, provider keys, or machine paths from another PC.
+Use the existing SupoClip installation at **`REPO/supoclip/`**, where `REPO` is the current repository root. Determine that root from the working repository, independently of the skill's global installation folder. Check `supoclip/docker-compose.yml` and its local configuration there; if missing, report the expected repository layout. Keep campaign work under `REPO/campaigns/`. The external `supoclip/` checkout is excluded from Git.
+
+This skill works with Codex and Claude on Windows or Linux. Helper scripts need Node.js 20+ and Python 3.10+; media work also needs FFmpeg/FFprobe, natively or in this installation's backend image. Discover actual URLs, container images, authentication, and encoder access from this repository's installation and the current PC. Never carry credentials, account IDs, provider keys, or machine paths from another PC.
 
 ## Campaign intake comes before generation
 
@@ -13,7 +15,7 @@ Ask for the campaign's terms and video configuration at the start of each new ca
 
 - Campaign name, complete terms, approval/warmup/audience guides, permitted creators and footage, logo/brand assets, required caption lines and hashtags, prohibited content, eligible platforms, and any clip length or submission deadlines.
 - Source URL/file and desired timestamps; target number of distinct strong clips; minimum/maximum duration; language and caption style; crop versus full gameplay versus facecam/gameplay layout; logo position, headline/CTA preferences, and platform safe areas.
-- Existing SupoClip URL/account; external AI processing/provider budget; available CPU/RAM/GPU, output quality, simultaneous jobs, and final output location. Inspect the PC instead of asking the user to inventory hardware. Ask about quality/cost priorities and limits.
+- SupoClip account; external AI processing/provider budget; available CPU/RAM/GPU, output quality, simultaneous jobs, and final output location. Inspect the repository's installation and PC to determine URLs and hardware. Ask about quality/cost priorities and limits.
 
 Confirm footage and window suitability with small previews before downloading/transcribing an hour. A stream title or channel link alone does not prove actual game content or eligibility. Resolve contradictory terms or unavailable assets before dependent work. Missing publishing guides need not block private draft generation when the user authorizes it, but mark that condition in the manifest.
 
@@ -29,7 +31,7 @@ Prefer connected SupoClip MCP/API capabilities when available. The bundled `scri
 4. Monitor the existing task and collect candidates with bounded concurrency. Resume from saved files after an interruption. Timeouts and 5xx responses can leave a request accepted: inspect history before retrying; reuse the same key. Do not recreate a paid generation task to fix a caption or logo.
 5. Review source context and word timings while later candidates render. Reject weak, duplicate, misleading, or campaign-prohibited moments. Finalize trim, headline, layout, and subtitles before encoding. Candidate count is not completed-export count.
 6. For a reviewed continuous full-frame moment, render directly from its source with `scripts/render.py`, so trim, layout, logo, title, CTA and subtitles are applied in one pass. Alternatively use `native_fit` for existing 1080x1920 SupoClip full-fit drafts. For portrait/split layouts or discontinuous edits, use SupoClip's existing editor and review its source-range mapping; do not apply the full-fit masks or continuous timing assumptions to those layouts.
-7. Choose hardware encoding only after the script's real encode check succeeds. CPU fallback uses `libx264`, `veryfast`, CRF 18, with a bounded thread budget. On a larger PC, benchmark the actual filter graph and allow a small number of concurrent final exports within available RAM/encoder capacity. Account for total threads across jobs. GPU support is not guaranteed by an FFmpeg encoder listing.
+7. Choose hardware encoding only after the script's real encode check succeeds. CPU fallback uses `libx264`, `veryfast`, CRF 18, with automatically sized encoder, decoder, filter and validation thread pools. Detection respects process affinity and Docker CPU quotas. Reserve one CPU by default; set `concurrent_renders` to the actual simultaneous render count to divide the per-render budget. Explicit thread overrides are supported. On a larger PC, benchmark the actual filter graph and allow a small number of concurrent final exports within available RAM/encoder capacity. More threads do not always improve throughput; use measured overrides when appropriate. GPU support is not guaranteed by an FFmpeg encoder listing.
 
 Avoid development-frontend memory pressure for repeated production-like work: recommend the existing production build target after inspecting the installation. Make/restart that change only within the user's authorized scope and with no active generation affected. Do not rebuild an entire app for a clip edit. Report download, AI/planning, native rendering, final rendering and review times separately; do not promise a speedup without measurement.
 

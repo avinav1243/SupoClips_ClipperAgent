@@ -1,4 +1,4 @@
-# External SupoClip checkout (download separately from upstream).
+# SupoClip is installed at <repo>/supoclip/ from upstream; exclude its checkout.
 /supoclip/
 
 # Local campaigns, media deliverables, and private conversation history.

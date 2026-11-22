@@ -46,6 +46,58 @@ def box(value, width, height):
     return x, y, w, h
 
 
+def available_cpu_count():
+    """Respect CPU affinity and Docker/cgroup quotas, rather than host size."""
+    process_count = getattr(os, 'process_cpu_count', os.cpu_count)()
+    limits = [process_count or 1]
+    if hasattr(os, 'sched_getaffinity'):
+        try:
+            limits.append(len(os.sched_getaffinity(0)))
+        except OSError:
+            pass
+    try:
+        quota, period = Path('/sys/fs/cgroup/cpu.max').read_text().split()
+        if quota != 'max' and int(quota) > 0 and int(period) > 0:
+            limits.append(math.ceil(int(quota)/int(period)))
+    except (OSError, ValueError):
+        try:
+            quota = int(Path('/sys/fs/cgroup/cpu/cpu.cfs_quota_us').read_text())
+            period = int(Path('/sys/fs/cgroup/cpu/cpu.cfs_period_us').read_text())
+            if quota > 0 and period > 0:
+                limits.append(math.ceil(quota/period))
+        except (OSError, ValueError):
+            pass
+    return max(1, min(limits))
+
+
+def thread_plan(settings, available=None):
+    """Size FFmpeg's separate thread pools for each simultaneous render."""
+    available = available_cpu_count() if available is None else available
+    workers = settings.get('concurrent_renders', 1)
+    reserve = settings.get('cpu_reserve', 1)
+    if type(workers) is not int or not 1 <= workers <= 64:
+        raise ValueError('Concurrent renders must be 1–64')
+    if type(reserve) is not int or not 0 <= reserve <= 64:
+        raise ValueError('CPU reserve must be 0–64')
+    budget = max(1, (available-reserve)//workers)
+
+    def choose(key, automatic):
+        value = settings.get(key, 'auto')
+        if value == 'auto':
+            return automatic
+        if type(value) is not int or not 1 <= value <= 64:
+            raise ValueError(key + ' must be auto or an integer from 1 to 64')
+        return min(value, budget)
+
+    encode = choose('cpu_threads', min(64, budget))
+    filters = choose('filter_threads', min(encode, 8))
+    decode = choose('decode_threads', min(encode, 4))
+    return {'available_cpus': available, 'cpu_reserve': reserve,
+            'concurrent_renders': workers, 'per_render_budget': budget,
+            'encode_threads': encode, 'filter_threads': filters,
+            'decode_threads': decode, 'validation_threads': filters}
+
+
 def select_encoder(requested, threads):
     candidates = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264'] if requested == 'auto' else [requested]
     if any(c not in {'h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264'} for c in candidates):
@@ -125,6 +177,10 @@ def main():
     parser.add_argument('--review', required=True)
     parser.add_argument('--source', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--cpu-threads', help='auto or explicit encoder thread count')
+    parser.add_argument('--filter-threads', help='auto or explicit filter thread count')
+    parser.add_argument('--decode-threads', help='auto or explicit decoder thread count')
+    parser.add_argument('--concurrent-renders', type=int, help='Number of renders sharing the CPU budget')
     args = parser.parse_args()
     config_file, review_file, source, destination = [Path(v).resolve() for v in (args.config, args.review, args.source, args.out)]
     config, review = load(config_file), load(review_file)
@@ -163,9 +219,14 @@ def main():
     ratio = min(bw/int(logo_video['width']), bh/int(logo_video['height']))
     lw, lh = max(2, int(int(logo_video['width'])*ratio)//2*2), max(2, int(int(logo_video['height'])*ratio)//2*2)
     lx, ly = (bx+(bw-lw)//2)//2*2, (by+(bh-lh)//2)//2*2
-    threads = r.get('cpu_threads', 4)
-    if type(threads) is not int or not 1 <= threads <= 64:
-        raise ValueError('CPU thread budget must be 1–64')
+    for key in ('cpu_threads', 'filter_threads', 'decode_threads'):
+        override = getattr(args, key)
+        if override is not None:
+            r[key] = 'auto' if override == 'auto' else int(override)
+    if args.concurrent_renders is not None:
+        r['concurrent_renders'] = args.concurrent_renders
+    threading = thread_plan(r)
+    threads = threading['encode_threads']
     encoder, checks = select_encoder(r.get('encoder', 'auto'), threads)
     fps = str(Fraction(video.get('avg_frame_rate') or '30'))
     if fps == '0':
@@ -196,7 +257,7 @@ def main():
         else:
             encode_options += ['-quality', 'balanced', '-rc', 'cqp', '-qp_i', '19', '-qp_p', '19']
         render_start = time.monotonic()
-        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', str(source), '-framerate', fps, '-loop', '1', '-i', str(logo), '-filter_complex_threads', str(min(threads, 4)), '-filter_complex', graph, '-map', '[v]', '-map', '0:a?', *encode_options, '-threads', str(threads), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', '-n', str(partial)], cwd=scratch)
+        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-threads:v', str(threading['decode_threads']), '-i', str(source), '-framerate', fps, '-loop', '1', '-i', str(logo), '-filter_complex_threads', str(threading['filter_threads']), '-filter_complex', graph, '-map', '[v]', '-map', '0:a?', *encode_options, '-threads:v', str(threads), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration), '-movflags', '+faststart', '-n', str(partial)], cwd=scratch)
         render_seconds = time.monotonic()-render_start
         final = probe(partial); fv = next(s for s in final['streams'] if s['codec_type'] == 'video')
         if (int(fv['width']), int(fv['height'])) != (width, height) or abs(float(final['format']['duration'])-duration) > 0.2:
@@ -205,7 +266,7 @@ def main():
             raise ValueError('Source audio disappeared from the output')
         verify_start = time.monotonic()
         proof = f'[0:v]crop={lw}:{lh}:{lx}:{ly},setsar=1[actual];[1:v]{logo_filter}[expected];[actual][expected]ssim=stats_file=logo-ssim.txt:shortest=1[checked]'
-        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', str(partial), '-framerate', fps, '-loop', '1', '-i', str(logo), '-filter_complex_threads', '2', '-filter_complex', proof, '-map', '[checked]', '-an', '-t', str(duration), '-f', 'null', '-'], cwd=scratch)
+        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-threads:v', str(threading['decode_threads']), '-i', str(partial), '-framerate', fps, '-loop', '1', '-i', str(logo), '-filter_complex_threads', str(threading['validation_threads']), '-filter_complex', proof, '-map', '[checked]', '-an', '-t', str(duration), '-f', 'null', '-'], cwd=scratch)
         values = [float(v) for v in re.findall(r'All:([0-9.]+)', (scratch / 'logo-ssim.txt').read_text())]
         frames = int(fv['nb_frames']) if str(fv.get('nb_frames', '')).isdigit() else None
         if frames is None:
@@ -216,9 +277,9 @@ def main():
         validation_seconds = time.monotonic()-verify_start
         for name, second in [('first', 0), ('middle', duration/2), ('last', max(0, duration-0.12))]:
             poster = support / (name+'.jpg')
-            run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-ss', str(second), '-i', str(partial), '-frames:v', '1', '-vf', 'scale=540:-2', '-y', str(poster)])
+            run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-ss', str(second), '-threads:v', str(threading['decode_threads']), '-i', str(partial), '-frames:v', '1', '-vf', 'scale=540:-2', '-filter_threads', str(threading['filter_threads']), '-y', str(poster)])
         (support / 'captions.ass').write_text((scratch / 'captions.ass').read_text(), encoding='utf-8')
-        report = {'width': width, 'height': height, 'duration_seconds': float(final['format']['duration']), 'continuous_logo_checked_frames': len(values), 'expected_video_frames': frames, 'minimum_logo_ssim': min(values), 'encoder': encoder, 'encoder_checks': checks, 'input_mode': mode, 'render_seconds': round(render_seconds, 3), 'validation_seconds': round(validation_seconds, 3), 'total_seconds': round(time.monotonic()-began, 3), 'audio': 'AAC re-encoded at 192 kbps for precise trimming', 'publication_status': 'draft_only_not_posted', 'full_audio_video_review': 'pending', 'review': review, 'source_file': str(source), 'original_stream_start_seconds': config['source']['window_start_seconds']+review.get('word_timebase_start_seconds', 0)+start, 'original_stream_end_seconds': config['source']['window_start_seconds']+review.get('word_timebase_start_seconds', 0)+end}
+        report = {'width': width, 'height': height, 'duration_seconds': float(final['format']['duration']), 'continuous_logo_checked_frames': len(values), 'expected_video_frames': frames, 'minimum_logo_ssim': min(values), 'encoder': encoder, 'encoder_checks': checks, 'threading': threading, 'input_mode': mode, 'render_seconds': round(render_seconds, 3), 'validation_seconds': round(validation_seconds, 3), 'total_seconds': round(time.monotonic()-began, 3), 'audio': 'AAC re-encoded at 192 kbps for precise trimming', 'publication_status': 'draft_only_not_posted', 'full_audio_video_review': 'pending', 'review': review, 'source_file': str(source), 'original_stream_start_seconds': config['source']['window_start_seconds']+review.get('word_timebase_start_seconds', 0)+start, 'original_stream_end_seconds': config['source']['window_start_seconds']+review.get('word_timebase_start_seconds', 0)+end}
         hasher = hashlib.sha256()
         with partial.open('rb') as media:
             for chunk in iter(lambda: media.read(1024*1024), b''):
@@ -230,7 +291,7 @@ def main():
             text.append(' '.join('#'+tag.lstrip('#') for tag in config['campaign']['hashtags']))
         destination.with_name(destination.stem+'-caption.txt').write_text('\n\n'.join(t for t in text if t)+'\n', encoding='utf-8')
         os.rename(partial, destination)
-        print(json.dumps({key: report[key] for key in ('encoder', 'render_seconds', 'validation_seconds', 'total_seconds', 'continuous_logo_checked_frames', 'minimum_logo_ssim')}, indent=2))
+        print(json.dumps({key: report[key] for key in ('encoder', 'threading', 'render_seconds', 'validation_seconds', 'total_seconds', 'continuous_logo_checked_frames', 'minimum_logo_ssim')}, indent=2))
 
 
 if __name__ == '__main__':

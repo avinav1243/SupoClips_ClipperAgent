@@ -1,5 +1,7 @@
 # Campaign configuration
 
+The application is installed at `REPO/supoclip/`, directly inside the current repository. New campaign directories belong under `REPO/campaigns/`. These paths are relative to the working repository, not to the home-directory copy of the skill. The application's local `.env`, Compose services and backend image are read from that checkout; installation paths do not need to be requested during intake.
+
 Paths in `campaign.json` are relative to that file's directory, so a working campaign can be moved without rewriting machine paths. Keep credentials and jobs under `private/`, source under `sources/`, and exports under `exports/`. The template contains no prior campaign branding, URLs, or credentials.
 
 `terms` holds the actual campaign requirements. `required_caption_lines`, `hashtags`, allowed `platforms`, prohibited content and duration bounds must come from intake. Empty caption/hashtag lists are valid when the campaign does not require them; intake must still be complete. Unavailable guides are recorded explicitly. `source.evidence` records the creator/content/window checks. The URL and time window document provenance; the submitted file must already contain exactly that window, within the installation's source-duration/upload limits.
@@ -32,4 +34,26 @@ The renderer handles one continuous full-frame segment. It preserves the source 
 
 Captions are built from actual words. If no timestamped cache is available, obtain/review an ASS subtitle file and use existing editor/export tools, or explicitly agree a caption-free draft; do not fabricate speech. The bundled renderer requires a word cache whenever generation's `add_subtitles` is true. Coarse-language corrections require source review; don't rewrite meaning.
 
-Use a smaller working concurrency on CPU systems; increase after observing throughput/RAM. `encoder: auto` checks NVENC/QSV/AMF with actual encoding and falls back to libx264. `cpu_threads` limits each render. Native GPU access can differ from container access; expose an NVIDIA GPU to Docker only when it exists and access was authorized. No model, GPU runtime, or paid provider is installed by this package.
+Use a smaller working concurrency on CPU systems; increase after observing throughput/RAM. `encoder: auto` checks NVENC/QSV/AMF with actual encoding and falls back to libx264. Native GPU access can differ from container access; expose an NVIDIA GPU to Docker only when it exists and access was authorized. No model, GPU runtime, or paid provider is installed by this package.
+
+### CPU multithreading
+
+The renderer sizes separate encoder, decoder, filter and validation thread pools. Defaults:
+
+```json
+{
+  "cpu_threads": "auto",
+  "filter_threads": "auto",
+  "decode_threads": "auto",
+  "cpu_reserve": 1,
+  "concurrent_renders": 1
+}
+```
+
+Available CPUs are detected from process affinity and Docker/cgroup quotas as well as the machine's logical CPU count. Automatic encoder threads use `(available CPUs - cpu_reserve) / concurrent_renders`, rounded down with a minimum of one and a maximum of 64. Filters use up to eight of that budget; decoders use up to four. Logo validation uses the filter budget. Explicit thread values from 1–64 are supported and capped to the per-render CPU budget.
+
+For example, 12 available logical CPUs with one reserved and one render allow 11 encoder threads, eight filter threads and four decoder threads. With three simultaneous renders, set `concurrent_renders: 3` in each render's configuration, giving three threads per pool per render. This declares how many render processes share the budget; it does not launch the processes itself. The pools overlap, so these limits are not a hard process-wide CPU-usage quota.
+
+Set `cpu_reserve: 0` to allow the entire available CPU budget. Keep the default reserve when responsiveness matters. For existing campaigns, change `cpu_threads: 4` to `auto` or use `--cpu-threads auto`; an explicit legacy four-thread setting is retained. CLI overrides `--filter-threads`, `--decode-threads` and `--concurrent-renders` are also available. Every validation report records the actual resolved thread plan.
+
+More threads can plateau or reduce throughput on some workloads. Use the included [scripts/benchmark-threads.py](../scripts/benchmark-threads.py) to compare four, eight and automatic threads on synthetic footage before fixing a machine-specific override. It measures wall time and retains all-frame logo validation; no provider calls are made.

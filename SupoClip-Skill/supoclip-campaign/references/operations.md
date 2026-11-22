@@ -1,6 +1,15 @@
 # Operating commands
 
-Resolve `SKILL` to this skill's folder and `WORK` to the private campaign directory. Copy the template to `WORK/campaign.json` and complete intake. Commands below use normal local Node/Python and work on Windows or Linux with appropriate path quoting.
+Resolve `REPO` to the current repository root (`git rev-parse --show-toplevel` when available), `SKILL` to this skill's folder, and `WORK` to `REPO/campaigns/CAMPAIGN`. The expected SupoClip installation is `REPO/supoclip/`; a globally installed skill may live outside `REPO`, but the application stays in that repository subfolder. Copy the template to `WORK/campaign.json` and complete intake. Commands below use normal local Node/Python and work on Windows or Linux with appropriate path quoting.
+
+Inspect services and the backend image from that installation:
+
+```text
+docker compose --project-directory REPO/supoclip ps
+docker compose --project-directory REPO/supoclip images -q backend
+```
+
+Use the discovered backend image with the media runner. Derive URLs/ports from this checkout's Compose configuration and relevant local settings; keep secret values out of output. Source/runtime limits and account credentials come from this installation, not a prior PC. A missing `REPO/supoclip/docker-compose.yml` means the expected installation is unavailable.
 
 ```text
 node SKILL/scripts/campaign.mjs validate WORK/campaign.json
@@ -11,6 +20,16 @@ node SKILL/scripts/campaign.mjs watch WORK/campaign.json --seconds 45
 node SKILL/scripts/campaign.mjs collect WORK/campaign.json --concurrency 2
 python SKILL/scripts/render.py --config WORK/campaign.json --review WORK/review.json --source WORK/source.mp4 --out WORK/exports/clip-01.mp4
 ```
+
+CPU thread counts default to automatic detection. To upgrade a campaign with an explicit old four-thread value, add `--cpu-threads auto`. Use `--concurrent-renders 2` for each of two simultaneous final render processes to divide their CPU budgets. Decoding, filtering, encoding and logo validation each use the resolved thread settings. See [configuration.md](configuration.md#cpu-multithreading) for overrides and CPU reserves.
+
+To benchmark this PC without processing campaign footage:
+
+```text
+python SKILL/scripts/benchmark-threads.py --output WORK/thread-benchmark --repeat 3
+```
+
+The output directory must be new and empty. The same benchmark can run through `media-runner.py` using `benchmark-threads.py --output /work/thread-benchmark --repeat 3` after `--`.
 
 `inspect` is read-only and prints health/workflow availability without credentials. `submit` verifies intake and live count support/policy before streaming the existing local file once. Advanced counts are sent only when supported; target policy permits automatic native count, whereas require_limit stops if the limit is unavailable. It fingerprints the source and config, checkpoints every mutation, and retains both idempotency keys across retries. `status`, `watch`, and `collect` require `private/job.json` from submit or an explicitly adopted existing job with matching fingerprints. A saved task ID resumes; no new task is created.
 
