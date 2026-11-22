@@ -1,0 +1,59 @@
+{
+  "campaign": {
+    "name": "",
+    "intake_complete": false,
+    "terms": [],
+    "guides_status": "not supplied",
+    "required_caption_lines": [],
+    "hashtags": [],
+    "platforms": [],
+    "prohibited_content": [],
+    "min_clip_seconds": 15,
+    "max_clip_seconds": 60
+  },
+  "source": {
+    "url": "",
+    "file": "source.mp4",
+    "window_start_seconds": 0,
+    "window_end_seconds": 3600,
+    "verified": false,
+    "evidence": ""
+  },
+  "connection": {
+    "origin": "http://localhost:8000",
+    "mode": "backend",
+    "api_key_env": "SUPOCLIP_API_KEY",
+    "session_file": "private/account.json"
+  },
+  "generation": {
+    "approved": false,
+    "external_processing_agreed": false,
+    "max_clips": 5,
+    "count_policy": "target",
+    "processing_mode": "fast",
+    "output_format": "vertical_fit",
+    "clip_length": "medium",
+    "add_subtitles": true,
+    "instructions": "",
+    "include_broll": false,
+    "cut_long_pauses": false,
+    "remove_filler_words": false
+  },
+  "render": {
+    "input_mode": "source_fit",
+    "width": 1080,
+    "height": 1920,
+    "foreground_box": [0, 656, 1080, 608],
+    "logo_file": "logo.png",
+    "logo_box": [100, 120, 880, 160],
+    "headline_y": 400,
+    "caption_y": 1490,
+    "cta_y": 1630,
+    "cta": "",
+    "font": "Noto Sans",
+    "encoder": "auto",
+    "cpu_threads": 4,
+    "preset": "veryfast",
+    "crf": 18
+  }
+}

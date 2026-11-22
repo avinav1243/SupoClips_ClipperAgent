@@ -1,0 +1,79 @@
+# External SupoClip checkout (download separately from upstream).
+/supoclip/
+
+# Local campaigns, media deliverables, and private conversation history.
+/campaigns/
+/Clip-1/
+/claude-history/
+private/
+
+# Local agent settings and installed copies of the portable skill.
+# Keep the canonical source under SupoClip-Skill/supoclip-campaign/.
+/.agents/
+/.claude/
+/.codex/
+/.aws/
+
+# Machine-specific setup notes and generated completion/benchmark reports.
+/SETUP.md
+/SupoClip-Skill-COMPLETE.md
+/SupoClip-Skill/benchmark-summary.json
+/_skill-validation/
+
+# Secrets and authentication data; retain shareable environment templates.
+.env
+.env.*
+!.env.example
+!.env.template
+credentials*.json
+account.json
+tokens.json
+*.pem
+*.key
+
+# Dependencies, Python caches, and build/test output.
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.next/
+dist/
+build/
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+test-results/
+playwright-report/
+
+# Generated archives, downloaded media, logs, and temporary files.
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.m4a
+*.log
+*.part
+*.partial.*
+*.tmp
+*.bak
+
+# OS/editor files.
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

@@ -1,0 +1,4 @@
+interface:
+  display_name: "SupoClip Campaign"
+  short_description: "Collect terms and create reviewed campaign clips"
+  default_prompt: "Use $supoclip-campaign to collect my campaign terms and video configuration, then create reviewed clip drafts with my existing SupoClip installation."
